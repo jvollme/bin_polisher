@@ -8,24 +8,27 @@ from Bio import SeqIO
 
 version="v0.01 (July 2016)"
 parser=argparse.ArgumentParser(description = "bin_polisher {} : Purify pre-generated bins (e.g. using Maxbin) based on z-score differences in contig coverage using mutliple sequencing datasets".format(version))
-input_args = parser.add_argument_group("input")
+input_args = parser.add_argument_group("Required input arguments")
 input_args.add_argument("-if", "--input_fasta", action = "store", nargs = "+", dest = "input_fasta_list", required = True, help = "Input fasta file(s) of a (single) bin")
 input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+", dest = "input_coverage_list", required = True, help = "Abundance files (in maxbin \".abund\"-format)")
 #TODO: add option to generate abundance info in this script using SAM/BAM-files (or even from fastqs). Remove the above "required"-option and change above nargs to "*" in that case
-parser.add_argument("-pr", "--pre-remove", action = "store", choices = ["high", "low", "both", "none"], dest = "pre_remove", default = "none", help = "remove extreme values based on upper (99%%) and lower (1%%) percentiles, or both. default = none")
-parser.add_argument("-mi", "--max_iterations", action = "store", type = int, dest = "max_iterations", default = 10, help = "maximum number of iterations for recalculating and comparing coverage average, standard deviation and z-score values and removing difference-outliers. Default = 10")
-parser.add_argument("--out_bad", action = "store_true", dest = "out_bad", default = False, help = "create seperate output files for rejected reads also. default = False")
-parser.add_argument("-op", "--out_prefix", action = "store", dest = "out_prefix", default = "bin_polisher", help = "prefix for output file(s). default = \"bin_polisher\"")
+filter_args = parser.add_argument_group("Filtering options")
+filter_args.add_argument("-pr", "--pre-remove", action = "store", choices = ["high", "low", "both", "none"], dest = "pre_remove", default = "none", help = "remove extreme values based on upper (99%%) or lower (1%%) percentile, or both. default = none")
+filter_args.add_argument("-mi", "--max_iterations", action = "store", type = int, dest = "max_iterations", default = 10, help = "maximum number of iterations for recalculating and comparing coverage average, standard deviation and z-score values and removing difference-outliers. Default = 10")
+filter_args.add_argument("-mz", "--max_zscore_diff", action = "store", type = int, dest = "max_zscore_diff", default = 4, help = "maximum difference in zscore to allow. Default = 4")
+output_args = parser.add_argument_group("Output options")
+output_args.add_argument("--out_bad", action = "store_true", dest = "out_bad", default = False, help = "create seperate output files for rejected reads also. default = False")
+output_args.add_argument("-op", "--out_prefix", action = "store", dest = "out_prefix", default = "bin_polisher", help = "prefix for output file(s). default = \"bin_polisher\"")
 parser.add_argument("-v", "--version", action = "store_true", dest = "show_version", help = "show version info and quit")
 args = parser.parse_args()
 
 
 def get_compression_type(infasta):
-	if fastafile.endswith(".gz"):
+	if infasta.endswith(".gz"):
 		return "gz"
-	elif fastafile.endswith(".bz2"):
+	elif infasta.endswith(".bz2"):
 		return "bzip2"
-	elif fastafile.endswith(".zip"):
+	elif infasta.endswith(".zip"):
 		return "zip"
 	else:
 		return "none"
@@ -34,24 +37,24 @@ def read_fasta(infasta):
 	compression_type = get_compression_type(infasta)
 	try:
 		if compression_type in ["gzip", "gz"]:
-			readfile = gzip.open(fastafile, 'r')
+			readfile = gzip.open(infasta, 'r')
 		elif compression_type in ["bzip2", "bz2"]:
-			readfile = bz2.BZ2File(fastafile, 'r')
+			readfile = bz2.BZ2File(infasta, 'r')
 		elif compression_type == "zip":
-			myzipfile = zipfile.ZipFile(fastafile, 'r')
+			myzipfile = zipfile.ZipFile(infasta, 'r')
 			if len(myzipfile.namelist()) > 1:
 				raise IOError("TOO MANY FILES IN ZIPFILE")
 			else:
 				readfile = myzipfile.open(myzipfile.namelist()[0])
 		else:
-			readfile = open(fastafile, 'r')
+			readfile = open(infasta, 'r')
 	except Exception, ex:
 		sys.stderr.write(ex.__class__.__name__ + " : " + str(ex))
 		return None
 	else:
 		in_fasta_iterator = SeqIO.parse(readfile, "fasta")
-		bindict = { record.id : {"record": record} for record in in_fasta_iterator}#coverage values will be added for each record in the below "read_coverage" function
-		return bin_dict
+		bindict = { record.id : record for record in in_fasta_iterator}#coverage values will be added for each record in the below "read_coverage" function
+		return bindict
 
 class bin_object(object):
 	def __init__(self, input_fasta_list, input_coverage_list):
@@ -60,7 +63,7 @@ class bin_object(object):
 			self.bindict.update(read_fasta(fasta))
 		self.cov_datasets = []
 		for incov in input_coverage_list:
-			self.cov_datasets.append(coverage_dataset(incov, bindict))
+			self.cov_datasets.append(coverage_dataset(incov, self.bindict))
 		
 	def pre_remove_upper_extremes(self):
 		del_list = []
@@ -121,7 +124,7 @@ class coverage_dataset(object):
 	def read_coverage(self, incov, bindict):
 		#bla
 		incov_file = open(incov, "r")
-		covdict = {line.split()[0] : line.split()[1] for line in incov_file if line.split()[0] in bindict} #add only coverage info of contigs that are actually in the bin
+		covdict = {line.split()[0] : float(line.split()[1]) for line in incov_file if line.split()[0] in bindict} #add only coverage info of contigs that are actually in the bin
 		incov_file.close()
 		return covdict
 		
@@ -142,16 +145,16 @@ class coverage_dataset(object):
 		
 	def pre_remove_upper_extremes(self):
 		del_list = []
-		for key in cov_value:
-			if cov_values[key] > p99:
+		for key in self.cov_value:
+			if self.cov_value[key] > self.p99:
 				del_list.append(key)
 		self.remove_and_update_covstats(del_list)
 		return del_list
 		
 	def pre_remove_lower_extremes(self):
 		del_list = []
-		for key in cov_value:
-			if cov_values[key] < p1:
+		for key in self.cov_value:
+			if self.cov_value[key] < self.p1:
 				del_list.append(key)
 		self.remove_and_update_covstats(del_list)
 		return del_list
@@ -167,7 +170,7 @@ class coverage_dataset(object):
 		for key in self.zscore:
 			this_zscore = self.zscore[key]
 			other_zscore = other_coverage_dataset.zscore[key]
-			if abs(this_zscore - other_zscore) > 4:
+			if abs(this_zscore - other_zscore) > args.max_zscore_diff:
 				del_list.append(key)
 		#self.remove_and_update_covstats(del_list) #the update is best done from the calling function AFTER all combinations have been compared. otherwise the order of the input influences the outcome
 		#other_coverage_dataset.remove_and_update_covstats(del_list) #see comment above
@@ -183,6 +186,7 @@ def pre_remove_extremes(mybin):
 	if args.pre_remove == "both":
 		preremove_record_list = mybin.pre_remove_both_extremes()
 	if args.out_bad:
+		print preremove_record_list[1].id
 		SeqIO.write(preremove_record_list, "{}_preremoved.fasta".format(args.out_prefix), "fasta")
 	return len(preremove_record_list)
 
@@ -190,19 +194,25 @@ def main():
 	my_bin = bin_object(args.input_fasta_list, args.input_coverage_list)
 	counter = 0
 	if args.pre_remove != "none":
-		counter += pre_remove_extremes(mybin)
+		counter += pre_remove_extremes(my_bin)
 		sys.stderr.write("pre-remove extremes set to \"{}\" : removed {} records\n".format(args.pre_remove, counter))
-	
+		sys.stderr.write(" new cov stats :" + ", and ".join(["mean = {:.3f} +/- {:.3f} for dataset {}".format(my_bin.cov_datasets[x].average, my_bin.cov_datasets[x].stdev, x + 1) for x in range(len(my_bin.cov_datasets))])+ "\n")
 	for i in range(1, args.max_iterations + 1):
 		remove_record_list, out_good_list = [], []
-		outname_bad = "{}_REMOVED_FilterIteration{}.fasta".format(args.out_prefix, i)
-		outname_good = "{}_KEPT_FilterIteration{}.fasta".format(args.out_prefix, i)
+		outname_bad = "{}_REMOVED_zdiff_{}_FilterIteration_{}.fasta".format(args.out_prefix, args.max_zscore_diff, i)
+		outname_good = "{}_KEPT_zdiff_{}_FilterIteration{}.fasta".format(args.out_prefix, args.max_zscore_diff, i)
 		remove_record_list = my_bin.filter_zscore_differences()
+		counter += len(remove_record_list)
+		if len(remove_record_list) == 0:
+			sys.stderr.write("Nothing more to remove --> quitting!\n")
+			break
 		if args.out_bad:
-			SeqIO.write(remove_record_list, outname, "fasta")
+			SeqIO.write(remove_record_list, outname_bad, "fasta")
 		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_record_list), counter))
+		sys.stderr.write(" new cov stats :" + ", and ".join(["mean = {:.3f} +/- {:.3f} for dataset {}".format(my_bin.cov_datasets[x].average, my_bin.cov_datasets[x].stdev, x + 1) for x in range(len(my_bin.cov_datasets))]) + "\n")
 		out_good_list = my_bin.bindict.values()
 		sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
+		SeqIO.write(out_good_list, outname_good, "fasta")
 	sys.stderr.write("===FINISHED!===")
 
 main()
