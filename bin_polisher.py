@@ -204,8 +204,8 @@ def main():
 		if zscore_diff < args.lower_zscore_cutoff:
 			break
 		remove_record_list, out_good_list = [], []
-		outname_bad = "{}_REMOVED_zdiff_{}_FilterIteration_{:03d}.fasta".format(args.out_prefix, zscore_diff, i)
-		outname_good = "{}_KEPT_zdiff_{}_FilterIteration_{:03d}.fasta".format(args.out_prefix, zscore_diff, i)
+		outname_bad = "{}_REMOVED_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
+		outname_good = "{}_KEPT_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
 		remove_record_list = my_bin.filter_zscore_differences(zscore_diff)
 		counter += len(remove_record_list)
 		if len(remove_record_list) == 0:
