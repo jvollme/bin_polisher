@@ -14,8 +14,9 @@ input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+"
 #TODO: add option to generate abundance info in this script using SAM/BAM-files (or even from fastqs). Remove the above "required"-option and change above nargs to "*" in that case
 filter_args = parser.add_argument_group("Filtering options")
 filter_args.add_argument("-pr", "--pre-remove", action = "store", choices = ["high", "low", "both", "none"], dest = "pre_remove", default = "none", help = "remove extreme values based on upper (99%%) or lower (1%%) percentile, or both. default = none")
-filter_args.add_argument("-mi", "--max_iterations", action = "store", type = int, dest = "max_iterations", default = 10, help = "maximum number of iterations for recalculating and comparing coverage average, standard deviation and z-score values and removing difference-outliers. Default = 10")
-filter_args.add_argument("-mz", "--max_zscore_diff", action = "store", type = int, dest = "max_zscore_diff", default = 4, help = "maximum difference in zscore to allow. Default = 4")
+filter_args.add_argument("-mi", "--max_iterations", action = "store", type = int, dest = "max_iterations", default = 50, help = "maximum number of iterations for recalculating and comparing coverage average, standard deviation and z-score values and removing difference-outliers. Default = 50")
+filter_args.add_argument("-uzc", "--upper_zscore_cutoff", action = "store", type = int, dest = "upper_zscore_cutoff", default = 4, help = "Start iteratively removing contigs with z-score differences above cutoff starting at the specified value (cutoff will be decreased by 1 when no z-scores above cutoff are encountered, until the lower zscore cutoff is reached). Default = 4")
+filter_args.add_argument("-lzc", "--lower_zscore_cutoff", action = "store", type = int, dest = "lower_zscore_cutoff", default = 2, help = "Stop iteratively reducing z-score difference cutoff if it falls below this value. Default = 2")
 output_args = parser.add_argument_group("Output options")
 output_args.add_argument("--out_bad", action = "store_true", dest = "out_bad", default = False, help = "create seperate output files for rejected reads also. default = False")
 output_args.add_argument("-op", "--out_prefix", action = "store", dest = "out_prefix", default = "bin_polisher", help = "prefix for output file(s). default = \"bin_polisher\"")
@@ -100,11 +101,11 @@ class bin_object(object):
 		del_records.extend(self.pre_remove_lower_extremes())
 		return del_records #return deleted records for optional exporting to fasta-file (to double check WHAT is being removed)
 		
-	def filter_zscore_differences(self):
+	def filter_zscore_differences(self, cutoff):
 		dataset_combinations = itertools.combinations(self.cov_datasets, 2)
 		del_list = []
 		for combination in dataset_combinations:
-			del_list.extend(combination[0].compare_zscores(combination[1]))
+			del_list.extend(combination[0].compare_zscores(combination[1], cutoff))
 		
 		del_list = list(set(del_list)) #remove duplicates from list
 		
@@ -165,12 +166,12 @@ class coverage_dataset(object):
 		del_list.extend(self.pre_remove_lower_extremes())
 		return del_list
 		
-	def compare_zscores(self, other_coverage_dataset):
+	def compare_zscores(self, other_coverage_dataset, cutoff):
 		del_list = []
 		for key in self.zscore:
 			this_zscore = self.zscore[key]
 			other_zscore = other_coverage_dataset.zscore[key]
-			if abs(this_zscore - other_zscore) > args.max_zscore_diff:
+			if abs(this_zscore - other_zscore) > cutoff:
 				del_list.append(key)
 		#self.remove_and_update_covstats(del_list) #the update is best done from the calling function AFTER all combinations have been compared. otherwise the order of the input influences the outcome
 		#other_coverage_dataset.remove_and_update_covstats(del_list) #see comment above
@@ -197,15 +198,20 @@ def main():
 		counter += pre_remove_extremes(my_bin)
 		sys.stderr.write("pre-remove extremes set to \"{}\" : removed {} records\n".format(args.pre_remove, counter))
 		sys.stderr.write(" new cov stats :" + ", and ".join(["mean = {:.3f} +/- {:.3f} for dataset {}".format(my_bin.cov_datasets[x].average, my_bin.cov_datasets[x].stdev, x + 1) for x in range(len(my_bin.cov_datasets))])+ "\n")
-	for i in range(1, args.max_iterations + 1):
+	zscore_diff = args.upper_zscore_cutoff
+	i = 1
+	while i <= args.max_iterations:
+		if zscore_diff < args.lower_zscore_cutoff:
+			break
 		remove_record_list, out_good_list = [], []
-		outname_bad = "{}_REMOVED_zdiff_{}_FilterIteration_{}.fasta".format(args.out_prefix, args.max_zscore_diff, i)
-		outname_good = "{}_KEPT_zdiff_{}_FilterIteration{}.fasta".format(args.out_prefix, args.max_zscore_diff, i)
-		remove_record_list = my_bin.filter_zscore_differences()
+		outname_bad = "{}_REMOVED_zdiff_{}_FilterIteration_{:03d}.fasta".format(args.out_prefix, zscore_diff, i)
+		outname_good = "{}_KEPT_zdiff_{}_FilterIteration_{:03d}.fasta".format(args.out_prefix, zscore_diff, i)
+		remove_record_list = my_bin.filter_zscore_differences(zscore_diff)
 		counter += len(remove_record_list)
 		if len(remove_record_list) == 0:
-			sys.stderr.write("Nothing more to remove --> quitting!\n")
-			break
+			sys.stderr.write("Nothing more to remove at z-score difference cutoff {} --> reducing z-score cutoff by 1!\n".format(zscore_diff))
+			zscore_diff -= 1
+			continue
 		if args.out_bad:
 			SeqIO.write(remove_record_list, outname_bad, "fasta")
 		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_record_list), counter))
@@ -213,6 +219,7 @@ def main():
 		out_good_list = my_bin.bindict.values()
 		sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
 		SeqIO.write(out_good_list, outname_good, "fasta")
+		i += 1
 	sys.stderr.write("===FINISHED!===")
 
 main()
