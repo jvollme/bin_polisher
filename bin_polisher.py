@@ -18,6 +18,7 @@ filter_args.add_argument("-mi", "--max_iterations", action = "store", type = int
 filter_args.add_argument("-uzc", "--upper_zscore_cutoff", action = "store", type = int, dest = "upper_zscore_cutoff", default = 4, help = "Start iteratively removing contigs with z-score differences above cutoff starting at the specified value (cutoff will be decreased by 1 when no z-scores above cutoff are encountered, until the lower zscore cutoff is reached). Default = 4")
 filter_args.add_argument("-lzc", "--lower_zscore_cutoff", action = "store", type = int, dest = "lower_zscore_cutoff", default = 2, help = "Stop iteratively reducing z-score difference cutoff if it falls below this value. Default = 2")
 output_args = parser.add_argument_group("Output options")
+output_args.add_argument("--intermediate", action = "store_true", dest = "intermediate", default = False, help = "output results of all intermediate iterations. Default = only output results of last iteration") 
 output_args.add_argument("--out_bad", action = "store_true", dest = "out_bad", default = False, help = "create seperate output files for rejected reads also. default = False")
 output_args.add_argument("-op", "--out_prefix", action = "store", dest = "out_prefix", default = "bin_polisher", help = "prefix for output file(s). default = \"bin_polisher\"")
 parser.add_argument("-v", "--version", action = "store_true", dest = "show_version", help = "show version info and quit")
@@ -133,6 +134,7 @@ class coverage_dataset(object):
 		cov_values = [covdict[key] for key in covdict]
 		average = numpy.mean(cov_values) 
 		stdev = numpy.std(cov_values)
+		#print("{} : (({} - {}) / {})".format(key, covdict[key], average, stdev))
 		zscoredict = {key : ((covdict[key] - average)/stdev) for key in covdict}
 		p99 = numpy.percentile(cov_values, 99) # upper extremes
 		p1 = numpy.percentile(cov_values, 1) # lower extremes
@@ -202,8 +204,9 @@ def main():
 	i = 1
 	while i <= args.max_iterations:
 		if zscore_diff < args.lower_zscore_cutoff:
+			sys.stderr.write("Can't reduce cutoff any further --> quitting!\n")
 			break
-		remove_record_list, out_good_list = [], []
+		#remove_record_list, out_good_list = [], []
 		outname_bad = "{}_REMOVED_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
 		outname_good = "{}_KEPT_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
 		remove_record_list = my_bin.filter_zscore_differences(zscore_diff)
@@ -211,15 +214,21 @@ def main():
 		if len(remove_record_list) == 0:
 			sys.stderr.write("Nothing more to remove at z-score difference cutoff {} --> reducing z-score cutoff by 1!\n".format(zscore_diff))
 			zscore_diff -= 1
+			if args.intermediate:
+				sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
+				SeqIO.write(out_good_list, outname_good, "fasta")
 			continue
 		if args.out_bad:
 			SeqIO.write(remove_record_list, outname_bad, "fasta")
 		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_record_list), counter))
 		sys.stderr.write(" new cov stats :" + ", and ".join(["mean = {:.3f} +/- {:.3f} for dataset {}".format(my_bin.cov_datasets[x].average, my_bin.cov_datasets[x].stdev, x + 1) for x in range(len(my_bin.cov_datasets))]) + "\n")
 		out_good_list = my_bin.bindict.values()
+		#if args.intermediate:
+		#	sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
+		#	SeqIO.write(out_good_list, outname_good, "fasta")
+		i += 1
+	sys.stderr.write("===FINISHED!===\n")
+	if not args.intermediate:
 		sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
 		SeqIO.write(out_good_list, outname_good, "fasta")
-		i += 1
-	sys.stderr.write("===FINISHED!===")
-
 main()
