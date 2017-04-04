@@ -194,8 +194,10 @@ def pre_remove_extremes(mybin):
 	return len(preremove_record_list)
 
 def main():
+	remove_record_list = []
+	outname_bad = "{}_REMOVED_by_zscore.fasta".format(args.out_prefix)
 	my_bin = bin_object(args.input_fasta_list, args.input_coverage_list)
-	counter = 0
+	counterdiff = 0
 	if args.pre_remove != "none":
 		counter += pre_remove_extremes(my_bin)
 		sys.stderr.write("pre-remove extremes set to \"{}\" : removed {} records\n".format(args.pre_remove, counter))
@@ -207,26 +209,27 @@ def main():
 			sys.stderr.write("Can't reduce cutoff any further --> quitting!\n")
 			break
 		#remove_record_list, out_good_list = [], []
-		outname_bad = "{}_REMOVED_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
 		outname_good = "{}_KEPT_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
-		remove_record_list = my_bin.filter_zscore_differences(zscore_diff)
-		counter += len(remove_record_list)
-		if len(remove_record_list) == 0:
+		remove_diff_list = my_bin.filter_zscore_differences(zscore_diff)
+		remove_record_list.extend(remove_diff_list)
+		if len(remove_diff_list) == 0:
 			sys.stderr.write("Nothing more to remove at z-score difference cutoff {} --> reducing z-score cutoff by 1!\n".format(zscore_diff))
 			zscore_diff -= 1
+			out_good_list = my_bin.bindict.values()
 			if args.intermediate:
 				sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
 				SeqIO.write(out_good_list, outname_good, "fasta")
 			continue
-		if args.out_bad:
-			SeqIO.write(remove_record_list, outname_bad, "fasta")
-		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_record_list), counter))
+		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_diff_list), len(remove_record_list)))
 		sys.stderr.write(" new cov stats :" + ", and ".join(["mean = {:.3f} +/- {:.3f} for dataset {}".format(my_bin.cov_datasets[x].average, my_bin.cov_datasets[x].stdev, x + 1) for x in range(len(my_bin.cov_datasets))]) + "\n")
 		out_good_list = my_bin.bindict.values()
 		#if args.intermediate:
 		#	sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
 		#	SeqIO.write(out_good_list, outname_good, "fasta")
 		i += 1
+	if args.out_bad:
+		#print remove_record_list
+		SeqIO.write(remove_record_list, outname_bad, "fasta")
 	sys.stderr.write("===FINISHED!===\n")
 	if not args.intermediate:
 		sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
