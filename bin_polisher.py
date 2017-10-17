@@ -1,6 +1,6 @@
 #!/usr/bin/python
 import argparse
-import numpy #using numpy for mean and stdev calculation, as this script requires biopython anyway, and numpy is already a dependancy of biopython
+import numpy #using numpy for mean and stdev calculation, as this script requires biopython anyway, and numpy is already a dependency of biopython
 import itertools
 import sys
 from Bio import SeqIO
@@ -10,7 +10,7 @@ version="v0.01 (July 2016)"
 parser=argparse.ArgumentParser(description = "bin_polisher {} : Purify pre-generated bins (e.g. using Maxbin) based on z-score differences in contig coverage using mutliple sequencing datasets".format(version))
 input_args = parser.add_argument_group("Required input arguments")
 input_args.add_argument("-if", "--input_fasta", action = "store", nargs = "+", dest = "input_fasta_list", required = True, help = "Input fasta file(s) of a (single) bin")
-input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+", dest = "input_coverage_list", required = True, help = "Abundance files (in maxbin \".abund\"-format)")
+input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+", dest = "input_coverage_list", required = True, help = "seperate abundance files for each dataset, listing the respective abundance/coverage of each contig in a seperate line (Format: <contig-id>\TAB<coverage>), May include contigs not present in bin-fasta (such contigs wil be ignored)")
 #TODO: add option to generate abundance info in this script using SAM/BAM-files (or even from fastqs). Remove the above "required"-option and change above nargs to "*" in that case
 filter_args = parser.add_argument_group("Filtering options")
 filter_args.add_argument("-pr", "--pre-remove", action = "store", choices = ["high", "low", "both", "none"], dest = "pre_remove", default = "none", help = "remove extreme values based on upper (99%%) or lower (1%%) percentile, or both. default = none")
@@ -197,7 +197,7 @@ def main():
 	remove_record_list = []
 	outname_bad = "{}_REMOVED_by_zscore.fasta".format(args.out_prefix)
 	my_bin = bin_object(args.input_fasta_list, args.input_coverage_list)
-	counterdiff = 0
+	counter = 0
 	if args.pre_remove != "none":
 		counter += pre_remove_extremes(my_bin)
 		sys.stderr.write("pre-remove extremes set to \"{}\" : removed {} records\n".format(args.pre_remove, counter))
@@ -211,6 +211,7 @@ def main():
 		#remove_record_list, out_good_list = [], []
 		outname_good = "{}_KEPT_FilterIteration_{:03d}_zdiff_{}.fasta".format(args.out_prefix, i, zscore_diff)
 		remove_diff_list = my_bin.filter_zscore_differences(zscore_diff)
+		counter += len(remove_diff_list)
 		remove_record_list.extend(remove_diff_list)
 		if len(remove_diff_list) == 0:
 			sys.stderr.write("Nothing more to remove at z-score difference cutoff {} --> reducing z-score cutoff by 1!\n".format(zscore_diff))
@@ -220,7 +221,7 @@ def main():
 				sys.stderr.write("\twriting {} remaining filtered contigs to {}\n".format(len(out_good_list), outname_good))
 				SeqIO.write(out_good_list, outname_good, "fasta")
 			continue
-		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_diff_list), len(remove_record_list)))
+		sys.stderr.write("Iteration {} : removed {} records --> {} removed in total\n".format(i, len(remove_diff_list), counter))
 		sys.stderr.write(" new cov stats :" + ", and ".join(["mean = {:.3f} +/- {:.3f} for dataset {}".format(my_bin.cov_datasets[x].average, my_bin.cov_datasets[x].stdev, x + 1) for x in range(len(my_bin.cov_datasets))]) + "\n")
 		out_good_list = my_bin.bindict.values()
 		#if args.intermediate:
