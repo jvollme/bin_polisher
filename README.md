@@ -46,9 +46,8 @@ Output options:
 
 example usage: ```bin_polisher.py -if <bin1.fasta.gz> -ic <bin1_sample1.coverage> [<bin1_sample2.coverage> ...]```
 
-This tool was originally created for lab-internal use and not with user friendliness or adaptiveness in mind. It is published here, to enable reproducability of any of our research projects that may have been using this script [(e.g. Vollmers et al, 2017)][].
+This tool was originally created for lab-internal use and not with user friendliness or adaptiveness in mind. It is published here, to enable reproducability of any of our research projects that may have been using this script (e.g. [Vollmers et al, 2017](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5372823/)).
 
 More flexible versions may be uploaded whenever I have time for it. For any problems or questions about the usage, please create an Issue on this repository.
 
-[(e.g. Vollmers et al, 2017)][https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5372823/]
 
