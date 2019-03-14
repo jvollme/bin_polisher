@@ -1,4 +1,4 @@
-## po2pocp.py
+## bin_polisher.py
 Purify pre-generated bins (e.g. using Maxbin) based on z-score differences in contig coverage using multiple sequencing datasets 
 
 ````
