@@ -6,11 +6,12 @@ import sys
 from Bio import SeqIO
 
 
-version="v0.01 (July 2016)"
+version="v0.02 (May 2019)"
 parser=argparse.ArgumentParser(description = "bin_polisher {} : Purify pre-generated bins (e.g. using Maxbin) based on z-score differences in contig coverage using mutliple sequencing datasets".format(version))
 input_args = parser.add_argument_group("Required input arguments")
 input_args.add_argument("-if", "--input_fasta", action = "store", nargs = "+", dest = "input_fasta_list", required = True, help = "Input fasta file(s) of a (single) bin")
 input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+", dest = "input_coverage_list", required = True, help = "seperate abundance files for each dataset, listing the respective abundance/coverage of each contig in a seperate line (Format: <contig-id>\TAB<coverage>), May include contigs not present in bin-fasta (such contigs wil be ignored)")
+input_args.add_argument("--mincov", action = "store", type = float, dest = "mincov", default = 0.25, help = "minimum coverage to consider. values below this value are considered as zero (default 0.25)")
 #TODO: add option to generate abundance info in this script using SAM/BAM-files (or even from fastqs). Remove the above "required"-option and change above nargs to "*" in that case
 filter_args = parser.add_argument_group("Filtering options")
 filter_args.add_argument("-pr", "--pre-remove", action = "store", choices = ["high", "low", "both", "none"], dest = "pre_remove", default = "none", help = "remove extreme values based on upper (99%%) or lower (1%%) percentile, or both. default = none")
@@ -128,6 +129,9 @@ class coverage_dataset(object):
 		incov_file = open(incov, "r")
 		covdict = {line.split()[0] : float(line.split()[1]) for line in incov_file if line.split()[0] in bindict} #add only coverage info of contigs that are actually in the bin
 		incov_file.close()
+		for key in covdict.keys():
+			if covdict[key] <= args.mincov:
+				covdict[key] = 0
 		return covdict
 		
 	def calc_zscore(self, covdict):
