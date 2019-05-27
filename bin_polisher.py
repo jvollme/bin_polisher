@@ -77,6 +77,9 @@ def read_bamm_table(bammtable, bindict):
 	for h in headers:
 		print h
 		out_dict_list.append(df[h].to_dict())
+		for key in out_dict_list[-1].keys(): #fix: also remove coverage info below mincov-cutoff from consideration here  
+			if out_dict_list[-1][key] <= args.mincov:
+				out_dict_list[-1][key] = 0
 	return out_dict_list
 
 class bin_object(object):
