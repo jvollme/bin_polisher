@@ -1,17 +1,19 @@
 #!/usr/bin/python
 import argparse
 import numpy #using numpy for mean and stdev calculation, as this script requires biopython anyway, and numpy is already a dependency of biopython
+import pandas as pd
 import itertools
 import sys
 from Bio import SeqIO
 
 
-version="v0.02 (May 2019)"
+version="v0.03 (May 2019)"
 parser=argparse.ArgumentParser(description = "bin_polisher {} : Purify pre-generated bins (e.g. using Maxbin) based on z-score differences in contig coverage using mutliple sequencing datasets".format(version))
 input_args = parser.add_argument_group("Required input arguments")
 input_args.add_argument("-if", "--input_fasta", action = "store", nargs = "+", dest = "input_fasta_list", required = True, help = "Input fasta file(s) of a (single) bin")
-input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+", dest = "input_coverage_list", required = True, help = "seperate abundance files for each dataset, listing the respective abundance/coverage of each contig in a seperate line (Format: <contig-id>\TAB<coverage>), May include contigs not present in bin-fasta (such contigs wil be ignored)")
+input_args.add_argument("-ic", "--input_coverage", action = "store", nargs = "+", dest = "input_coverage_list", required = True, help = "either ONE bamm_coverage-table OR seperate abundance files for each dataset, listing the respective abundance/coverage of each contig in a seperate line (Format: <contig-id>\TAB<coverage>), May include contigs not present in bin-fasta (such contigs wil be ignored)")
 input_args.add_argument("--mincov", action = "store", type = float, dest = "mincov", default = 0.25, help = "minimum coverage to consider. values below this value are considered as zero (default 0.25)")
+input_args.add_argument("--bammtable", action = "store_true", dest = "bammtable", default = False, help = "set this flag if the coverage-info is supplied in the form of a (single) bamm_coverage-file")
 #TODO: add option to generate abundance info in this script using SAM/BAM-files (or even from fastqs). Remove the above "required"-option and change above nargs to "*" in that case
 filter_args = parser.add_argument_group("Filtering options")
 filter_args.add_argument("-pr", "--pre-remove", action = "store", choices = ["high", "low", "both", "none"], dest = "pre_remove", default = "none", help = "remove extreme values based on upper (99%%) or lower (1%%) percentile, or both. default = none")
@@ -59,14 +61,39 @@ def read_fasta(infasta):
 		bindict = { record.id : record for record in in_fasta_iterator}#coverage values will be added for each record in the below "read_coverage" function
 		return bindict
 
+def read_bamm_table(bammtable, bindict):
+	sys.stderr.write("\nreading input from bamm-table\n")
+	infile = open(bammtable, "r")
+	#TODO make a function that creates coverage objects based on bammtable
+	df = pd.read_csv(infile, sep = '\t', index_col = 0)
+	df = df.drop("Length", axis=1)
+	rowdeletionlist = []
+	for row in list(df.index):
+		if row not in bindict:
+			rowdeletionlist.append(row)
+	df = df.drop(rowdeletionlist, axis=0) #get rid of all lines concerning contigs which are not actually present in current bin
+	headers = list(df)
+	out_dict_list = []
+	for h in headers:
+		print h
+		out_dict_list.append(df[h].to_dict())
+	return out_dict_list
+
 class bin_object(object):
 	def __init__(self, input_fasta_list, input_coverage_list):
 		self.bindict = {}
 		for fasta in input_fasta_list:
 			self.bindict.update(read_fasta(fasta))
 		self.cov_datasets = []
-		for incov in input_coverage_list:
-			self.cov_datasets.append(coverage_dataset(incov, self.bindict))
+		if len(input_coverage_list) == 1:
+			if args.bammtable:
+				for incovdict in read_bamm_table(input_coverage_list[0], self.bindict):
+					self.cov_datasets.append(coverage_dataset(incovdict, self.bindict))
+			else:
+				raise IOError("ERROR: only one coverage file given and '--bammtable' not set")
+		else: 
+			for incov in input_coverage_list:
+				self.cov_datasets.append(coverage_dataset(incov, self.bindict))
 		
 	def pre_remove_upper_extremes(self):
 		del_list = []
@@ -121,7 +148,10 @@ class bin_object(object):
 		
 class coverage_dataset(object):
 	def __init__(self, incov, bindict):
-		self.cov_value = self.read_coverage(incov, bindict)
+		if type(incov) == str:
+			self.cov_value = self.read_coverage(incov, bindict) # assumes metabat-style '*.abund'-files
+		elif type(incov) == dict:
+			self.cov_value = incov # assumes dict of single column parsed from bamm file via "read_bamm_table()"
 		self.average, self.stdev, self.zscore, self.p99, self.p1 = self.calc_zscore(self.cov_value)
 		
 	def read_coverage(self, incov, bindict):
